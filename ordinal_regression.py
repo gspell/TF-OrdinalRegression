@@ -1,6 +1,8 @@
 import numpy as np
 import tensorflow as tf
 import pandas as pd
+
+from ordinal_eval import predict_labels, get_error_metric
 epsilon = 1e-30
 
 def load_sample_data(filename):
@@ -39,7 +41,17 @@ def threshold_var_diff(ordinal_vars, thresholds):
     differences = tf.subtract(thresholds, ordinal_vars)
     return differences
 
-def prob_true_class(class_idx, true_labels, logistic_matrix, num_classes):
+def prob_all_classes(logistic_matrix, num_classes):
+    """ Do column differences of logistic matrix
+    Note that there is an implicit appending of 1's for last column and 0's for first """
+    probs_list = []
+    for ord_class in range(num_classes):
+        prob_class = prob_of_class(ord_class, logistic_matrix, num_classes)
+        probs_list.append(prob_class)
+    probs_all_classes = tf.stack(probs_list, axis=1)
+    return probs_all_classes
+
+def prob_of_class(class_idx, logistic_matrix, num_classes):
     class_column = tf.gather(logistic_matrix, class_idx, axis=1)
     class_column = tf.cast(class_column, tf.float32)
     if class_idx == num_classes-1:
@@ -52,6 +64,10 @@ def prob_true_class(class_idx, true_labels, logistic_matrix, num_classes):
         neighbor_column = tf.gather(logistic_matrix, class_idx-1, axis=1)
         neighbor_column = tf.cast(neighbor_column, tf.float32)
         class_diff = tf.subtract(class_column, neighbor_column)
+    return class_diff
+
+def prob_true_class(class_idx, true_labels, logistic_matrix, num_classes):
+    class_diff = prob_of_class(class_idx, logistic_matrix, num_classes)
     idx_for_class = tf.where(tf.equal(true_labels, class_idx))
     return tf.gather(class_diff, idx_for_class) + epsilon
 
@@ -97,17 +113,9 @@ def run_model(inputs, labels, num_classes, num_features):
         if i %5 == 0:
             print("Step {}, Loss: {}".format(i, iteration_loss))
     sess.close()
-    
-def temp_setup():
-    data_filename = "sample_ordinal_data.csv"
-    X, y = load_sample_data(data_filename)
-    num_classes = len(np.unique(y))
-    num_examples, num_features = np.shape(X)
-    log_prob = model(X, y, num_classes, num_features)
-    return log_prob
 
 def main():
-    data_filename = "sample_ordinal_data.csv"
+    data_filename = "example_ordinal_data.csv"
     X, y = load_sample_data(data_filename)
     num_classes = len(np.unique(y))
     num_examples, num_features = np.shape(X)
