@@ -1,0 +1,3 @@
+# Ordinal Regression
+
+Ordinal regression concerns multi-label data in which the data labels are ordered relative to each other.  As a deep learning researcher, I've encountered a problem setting in which ordinal regression seems appropriate, but I haven't found a Tensorflow implementation of ordinal regression methods. This is my attempt to establish ordinal regression methods in Tensorflow so that I may apply it to my research. 
