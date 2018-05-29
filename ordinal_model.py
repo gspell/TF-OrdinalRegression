@@ -21,7 +21,7 @@ class OrdinalModel():
         print("Ordinal Thresholds shape {}".format(self.ord_thresholds.get_shape()))
         self.ordinal_vars = self._compute_ordinal_vars()
         print("Ordinal vars shape {}".format(self.ordinal_vars.get_shape()))
-        self.logistic_matrix = self.compute_logistic_matrix()
+        self.sigmoid_matrix = self._sigmoid_over_classDiffs()
         
     def _get_ordinal_weights(self):
         weights = tf.get_variable("ordinal_weights", shape = [self.num_features, 1])
@@ -76,7 +76,7 @@ class OrdinalModel():
         neighbor_column = tf.gather(self.sigmoid_matrix, class_idx, axis=1)
         neighbol_column = tf.cast(neighbor_column, tf.float32)
         class_prob = tf.subtract(class_column, neighbor_column)
-        return class_diff + epsilon
+        return class_prob + epsilon
 
     def _all_class_probs(self):
         probs_list = []
@@ -115,6 +115,11 @@ class OrdinalModel():
             metric = tf.square(errors)
         return tf.reduce_mean(metric)
 
+    def get_accuracy(self):
+        correct_predictions = tf.equal(self._predicted_labels(), self.labels)
+        accuracy = tf.reduce_mean(tf.cast(correct_predcitions, "float"))
+        return accuracy
+    
 def load_example_data(filename):
     """ Can also get Boston dataset from SKlearn, which might be good """
     data = pd.read_csv(filename, header=None)
