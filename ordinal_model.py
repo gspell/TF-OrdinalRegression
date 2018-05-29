@@ -1,9 +1,12 @@
 import numpy as np
 import tensorflow as tf
 import pandas as pd
+import os
+os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
 
 from ordinal_eval import predict_labels, get_error_metric
 epsilon = 1e-30
+INF = 1e30
 
 class OrdinalModel():
     def __init__(self, num_classes, num_features,
@@ -15,7 +18,9 @@ class OrdinalModel():
         
         self.ord_weights = self._get_ordinal_weights()
         self.ord_thresholds = self._get_ordinal_thresholds(init_vals = threshold_init)
+        print("Ordinal Thresholds shape {}".format(self.ord_thresholds.get_shape()))
         self.ordinal_vars = self._compute_ordinal_vars()
+        print("Ordinal vars shape {}".format(self.ordinal_vars.get_shape()))
         self.logistic_matrix = self.compute_logistic_matrix()
         
     def _get_ordinal_weights(self):
@@ -27,16 +32,24 @@ class OrdinalModel():
             """ Note these are constant, not tunable """
             ordinal_thresholds = tf.constant(init_vals, name="ord_thresholds")
         else:
-            init_thresholds = np.random.uniform(-1, 1, self.num_classes)
+            init_thresholds = np.random.uniform(-10, 10, self.num_classes-1)
             init_thresholds = np.sort(init_thresholds)
-            ordinal_thresholds = tf.constant(init_thresholds, name="ord_thresholds")
-            """ This is currently not suggested for use
-            shape = [self.num_classes, 1]
-            unordered_thresholds = tf.Variable(tf.random_uniform(shape, minval= -1,
-                                                                 maxval = 1),
-                                               name="ord_thresholds")
-            ordinal_thresholds = tf.contrib.framework.sort(unordered_thresholds)
-            """
+            print("Initial threshold values: {}".format(init_thresholds))
+            thresholds = []
+            temp_threshold = tf.get_variable("neg_inf_thresh", initializer=-INF,
+                                             trainable=False)
+            thresholds.append(tf.cast(temp_threshold, tf.float64))
+            for i in range(self.num_classes-1):
+                threshold_name = "threshold_"+str(i)
+                #constraint = lambda x: tf.clip_by_value(x-thresholds[i], 0.001, np.infty)
+                temp_threshold = tf.get_variable(threshold_name,
+                                                 initializer=init_thresholds[i],
+                                                 trainable=True)
+                thresholds.append(temp_threshold)
+            temp_threshold = tf.get_variable("inf_thresh", initializer=INF,
+                                             trainable = False)
+            thresholds.append(tf.cast(temp_threshold, tf.float64))
+            ordinal_thresholds = tf.stack(thresholds)
         return ordinal_thresholds
 
     def _compute_ordinal_vars(self):
@@ -74,7 +87,7 @@ class OrdinalModel():
     def _all_class_probs(self):
         probs_list = []
         for ord_class in range(self.num_classes):
-            class_prob = self._class_prob(ord_class, self.logistic_matrix)
+            class_prob = self._class_prob(ord_class)
             probs_list.append(class_prob)
         all_class_probs = tf.stack(probs_list, axis=1)
         return all_class_probs
@@ -96,6 +109,18 @@ class OrdinalModel():
             total_log_prob = total_log_prob + log_prob
         return -total_log_prob
 
+    def _predicted_labels(self):
+        predicted_labels = tf.argmax(self._all_class_probs(), axis=1)
+        return tf.cast(predicted_labels, tf.int32)
+
+    def _get_error_metric(self, metric="MAE"):
+        errors = tf.cast(tf.subtract(self.labels, self._predicted_labels()), tf.float32)
+        if metric == "MAE":
+            metric = tf.abs(errors)
+        elif metric == "MSE":
+            metric = tf.square(errors)
+        return tf.reduce_mean(metric)
+    
 def load_example_data(filename):
     """ Can also get Boston dataset from SKlearn, which might be good """
     data = pd.read_csv(filename, header=None)
@@ -108,18 +133,22 @@ def run_model(X, y, num_classes, num_features):
     labels = tf.placeholder(dtype=tf.int32, shape=[None], name="labels")
     model = OrdinalModel(num_classes, num_features, inputs=inputs, labels=labels)
     log_loss = model.total_loss()
+    mae = model._get_error_metric(metric="MAE")
     train_op = tf.train.AdamOptimizer(0.001).minimize(log_loss)
     session_config = tf.ConfigProto(allow_soft_placement=True,
                                     log_device_placement=False)
     session_config.gpu_options.allow_growth = True
     sess = tf.Session(config=session_config)
     sess.run(tf.global_variables_initializer())
-    num_iterations = 1000
+    num_iterations = 5000
     for i in range(num_iterations):
         _, iteration_loss = sess.run([train_op, log_loss],
                                      feed_dict = {inputs:X, labels:y})
-        if i % 10 == 0:
-            print("Step {}, Loss: {}".format(i, iteration_loss))
+        if i % 20 == 0:
+            iteration_mae = sess.run(mae, feed_dict={inputs:X, labels:y})
+            print("Step {}, Loss: {:.4f}, MAE: {:.3f}".format(i, iteration_loss, iteration_mae))
+            #ord_thresholds = sess.run(model.ord_thresholds)
+            #print("Ordinal Thresholds: {}".format(ord_thresholds))
     sess.close()
     
 def main():
