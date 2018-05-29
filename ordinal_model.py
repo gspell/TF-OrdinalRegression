@@ -66,34 +66,28 @@ class OrdinalModel():
         differences = tf.subtract(thresholds, ordinal_vars)
         return differences
 
-    def compute_logistic_matrix(self):
+    def _sigmoid_over_classDiffs(self):
         return tf.sigmoid(self._threshold_var_diff())
                           
-    def _class_prob(self, class_idx):
-        class_column = tf.gather(self.logistic_matrix, class_idx, axis=1)
+    def _single_class_prob(self, class_idx):
+        class_column = tf.gather(self.sigmoid_matrix, class_idx+1, axis=1)
         class_column = tf.cast(class_column, tf.float32)
-        if class_idx == self.num_classes -1:
-            neighbor_column = 1.0
-            class_diff = tf.subtract(neighbor_column, class_column)
-        elif class_idx == 0:
-            neighbor_column = 0.0
-            class_diff = tf.subtract(class_column, neighbor_column)
-        else:
-            neighbor_column = tf.gather(self.logistic_matrix, class_idx-1, axis=1)
-            neighbor_column = tf.cast(neighbor_column, tf.float32)
-            class_diff = tf.subtract(class_column, neighbor_column)
+
+        neighbor_column = tf.gather(self.sigmoid_matrix, class_idx, axis=1)
+        neighbol_column = tf.cast(neighbor_column, tf.float32)
+        class_prob = tf.subtract(class_column, neighbor_column)
         return class_diff + epsilon
 
     def _all_class_probs(self):
         probs_list = []
         for ord_class in range(self.num_classes):
-            class_prob = self._class_prob(ord_class)
+            class_prob = self._single_class_prob(ord_class)
             probs_list.append(class_prob)
         all_class_probs = tf.stack(probs_list, axis=1)
         return all_class_probs
 
     def _true_class_prob(self, class_idx):
-        class_prob = self._class_prob(class_idx)
+        class_prob = self._single_class_prob(class_idx)
         idx_for_class = tf.where(tf.equal(self.labels, class_idx))
         return tf.gather(class_prob, idx_for_class)
 
@@ -120,7 +114,7 @@ class OrdinalModel():
         elif metric == "MSE":
             metric = tf.square(errors)
         return tf.reduce_mean(metric)
-    
+
 def load_example_data(filename):
     """ Can also get Boston dataset from SKlearn, which might be good """
     data = pd.read_csv(filename, header=None)
