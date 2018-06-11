@@ -1,6 +1,9 @@
 import numpy as np
 import tensorflow as tf
 import pandas as pd
+import tensorflow.contrib.slim as slim
+
+from sklearn.datasets import load_boston
 import os
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
 
@@ -55,9 +58,17 @@ class OrdinalModel():
     def _compute_ordinal_vars(self):
         """ Could add a non-linearity and biases here """
         inputs = tf.cast(self.inputs, tf.float32)
-        ordinal_vars = tf.matmul(inputs, self.ord_weights,
-                                 transpose_a=False, transpose_b=False)
+        """
+        hidden_weights_1 = tf.get_variable("hidden_weights_1", shape=[self.num_features, 2])
+        hidden_biases_1 = tf.get_variable("hidden_biases_1", shape=[2])
+        ordinal_vars = tf.nn.xw_plus_b(inputs, hidden_weights_1, hidden_biases_1)
         ordinal_vars = tf.nn.relu(ordinal_vars)
+        hidden_weights_2 = tf.get_variable("hidden_weights_2", shape=[2, 1])
+        hidden_biases_2 = tf.get_variable("hidden_biases_2", shape=[1])
+        """
+        ordinal_vars = slim.fully_connected(inputs, 4)
+        ordinal_vars = slim.fully_connected(inputs, 2)
+        ordinal_vars = slim.fully_connected(ordinal_vars, 1, activation_fn=None) 
         return ordinal_vars
 
     def _threshold_var_diff(self):
@@ -129,6 +140,11 @@ def load_example_data(filename):
     y = data[4].values - 1 # Need to 0-index class labels
     return X, y
 
+def load_boston_data():
+    X, y = load_boston(return_X_y=True)
+    y = np.round(y).astype(int)
+    return X, y
+
 def split_data(X, y, percent_test):
     num_holdout = int(percent_test * len(y))
     permutation = np.arange(len(y))
@@ -169,6 +185,7 @@ def run_model(X, y, num_classes, num_features, seed=0):
     
 def main():
     data_filename = "example_ordinal_data.csv"
+    #X, y = load_boston_data()
     X,y = load_example_data(data_filename)
     num_classes = len(np.unique(y))
     num_examples, num_features = np.shape(X)

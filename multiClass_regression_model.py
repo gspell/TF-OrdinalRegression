@@ -1,6 +1,8 @@
 import numpy as np
 import tensorflow as tf
 import pandas as pd
+
+from sklearn.datasets import load_boston
 import pickle
 import os
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
@@ -26,7 +28,8 @@ class MultiClassRegressionModel():
                                          shape=[self.num_features, self.num_classes])
         hidden_biases = tf.get_variable("hidden_biases", shape=[self.num_classes])
         outputs = tf.nn.xw_plus_b(input_features, hidden_weights, hidden_biases)
-        outputs = tf.nn.relu(outputs)
+        outputs = outputs + epsilon
+        #outputs = tf.nn.relu(outputs)
         return outputs
 
 
@@ -108,8 +111,14 @@ def load_example_data(filename):
     y = data[4].values - 1 # Need to 0-index class labels
     return X, y
 
+def load_boston_data():
+    X, y = load_boston(return_X_y=True)
+    y = np.round(y).astype(int)
+    return X, y
+
 def main():
     data_filename = "example_ordinal_data.csv"
+    #X, y = load_boston_data()
     X, y = load_example_data(data_filename)
     num_classes = len(np.unique(y))
     num_examples, num_features = np.shape(X)
