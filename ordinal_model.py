@@ -53,9 +53,11 @@ class OrdinalModel():
         return ordinal_thresholds
 
     def _compute_ordinal_vars(self):
+        """ Could add a non-linearity and biases here """
         inputs = tf.cast(self.inputs, tf.float32)
         ordinal_vars = tf.matmul(inputs, self.ord_weights,
                                  transpose_a=False, transpose_b=False)
+        ordinal_vars = tf.nn.relu(ordinal_vars)
         return ordinal_vars
 
     def _threshold_var_diff(self):
@@ -74,7 +76,7 @@ class OrdinalModel():
         class_column = tf.cast(class_column, tf.float32)
 
         neighbor_column = tf.gather(self.sigmoid_matrix, class_idx, axis=1)
-        neighbol_column = tf.cast(neighbor_column, tf.float32)
+        neighbor_column = tf.cast(neighbor_column, tf.float32)
         class_prob = tf.subtract(class_column, neighbor_column)
         return class_prob + epsilon
 
@@ -119,15 +121,28 @@ class OrdinalModel():
         correct_predictions = tf.equal(self._predicted_labels(), self.labels)
         accuracy = tf.reduce_mean(tf.cast(correct_predcitions, "float"))
         return accuracy
-    
+   
 def load_example_data(filename):
     """ Can also get Boston dataset from SKlearn, which might be good """
     data = pd.read_csv(filename, header=None)
     X = data[[0, 1, 2, 3]].values
-    y = data[4].values
+    y = data[4].values - 1 # Need to 0-index class labels
     return X, y
 
-def run_model(X, y, num_classes, num_features):
+def split_data(X, y, percent_test):
+    num_holdout = int(percent_test * len(y))
+    permutation = np.arange(len(y))
+    np.random.shuffle(permutation) # does in place
+    shuffled_X, shuffled_y = X[permutation], y[permutation]
+    train_X, test_X = shuffled_X[:-num_holdout], shuffled_X[-num_holdout:]
+    train_y, test_y = shuffled_y[:-num_holdout], shuffled_y[-num_holdout:]
+    print("Indices for test: {}".format(permutation[-num_holdout:]))
+    return train_X, train_y, test_X, test_y
+
+def run_model(X, y, num_classes, num_features, seed=0):
+    tf.set_random_seed(seed=seed)
+    np.random.seed(seed=seed)
+    train_X, train_y, test_X, test_y = split_data(X, y, percent_test = 0.2)
     inputs = tf.placeholder(dtype=tf.float32, shape=[None, num_features], name="inputs")
     labels = tf.placeholder(dtype=tf.int32, shape=[None], name="labels")
     model = OrdinalModel(num_classes, num_features, inputs=inputs, labels=labels)
@@ -142,10 +157,12 @@ def run_model(X, y, num_classes, num_features):
     num_iterations = 5000
     for i in range(num_iterations):
         _, iteration_loss = sess.run([train_op, log_loss],
-                                     feed_dict = {inputs:X, labels:y})
+                                     feed_dict = {inputs:train_X, labels:train_y})
         if i % 20 == 0:
-            iteration_mae = sess.run(mae, feed_dict={inputs:X, labels:y})
-            print("Step {}, Loss: {:.4f}, MAE: {:.3f}".format(i, iteration_loss, iteration_mae))
+            train_mae = sess.run(mae, feed_dict={inputs:train_X, labels:train_y})
+            test_mae = sess.run(mae, feed_dict = {inputs:test_X, labels:test_y})
+            print("Step {}, Loss: {:.4f}, Train MAE: {:.3f}, Test MAE: {:.3f}".format(
+                  i, iteration_loss, train_mae, test_mae))
             #ord_thresholds = sess.run(model.ord_thresholds)
             #print("Ordinal Thresholds: {}".format(ord_thresholds))
     sess.close()
